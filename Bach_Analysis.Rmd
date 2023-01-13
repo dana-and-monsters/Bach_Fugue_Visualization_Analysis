@@ -1000,3 +1000,57 @@ online_dat%>%group_by(Subgroup)%>%summarise(W = shapiro.test(Understand)$statist
 ```
 
 
+### LME
+
+Try with lme4 anyways
+#### Understand
+```{r}
+baseline<-lmer(Understand ~ 1 + (1|Pt_ID), data = online_dat, REML = FALSE)
+plot(baseline)
+
+type<-lmer(Understand ~ 1 + type + (1|Pt_ID), data = online_dat, REML = FALSE)
+plot(type)
+
+subgroup<-lmer(Understand ~ 1 + Subgroup + (1|Pt_ID), data = online_dat, REML = FALSE)
+plot(subgroup)
+
+anova(baseline, type) # ns
+anova(baseline, subgroup) # ns
+```
+Check qq
+```{r}
+require(lattice)
+qqmath(type, id=0.05)
+qqmath(subgroup, id=0.05)
+```
+
+#### Enhance
+```{r}
+baseline<-lmer(Enhance ~ 1 + (1|Pt_ID), data = online_dat, REML = FALSE)
+plot(baseline)
+
+type<-lmer(Enhance ~ 1 + type + (1|Pt_ID), data = online_dat, REML = FALSE)
+plot(type)
+
+subgroup<-lmer(Enhance ~ 1 + Subgroup + (1|Pt_ID), data = online_dat, REML = FALSE)
+plot(subgroup)
+
+anova(baseline, type) # ns
+anova(baseline, subgroup) # ns
+```
+
+Visualize
+```{r}
+plot_data<-online_dat%>%select(Pt_ID,type, Understand, Enhance)
+
+long<-plot_data%>%pivot_longer(!c(Pt_ID, type), names_to = "factor", values_to = "response")
+
+ggplot(long, aes(x = type, y = response)) +
+  geom_boxplot(fill = "light blue") + 
+  geom_jitter(alpha = .5)+
+  stat_summary(fun=mean, geom="point", shape=10, size=3.5, color="black") + 
+  ggtitle("Live versus Online Complex") + 
+  facet_grid(cols = vars(factor))+
+  theme_bw() + theme(legend.position="none")
+```
+
