@@ -1,0 +1,8 @@
+musician_status,Live,Online
+Tone-deaf,1,NA
+Nonmusician,7,2
+Music-loving nonmusician,48,10
+Amateur musician,12,14
+Serious amateur musician,8,8
+Semiprofessional musician,3,6
+Professional musician,7,13

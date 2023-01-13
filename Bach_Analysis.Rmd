@@ -1,0 +1,1002 @@
+---
+title: "Analysis and Visualization of Data for Bach Visualization Project"
+output:
+  html_document:
+    df_print: paged
+---
+
+This notebook conducts analysis of the questionnaire presented to the live and livestreaming audiences of MusicLab Copenhagen and a follow-up sample of online participants who responded to continuous rating scales and the same survey that was provided to the concert audience. The survey can be found here: https://oslopsych.az1.qualtrics.com/jfe/form/SV_9n5uwhPGOHJqqHQ
+
+```{r}
+citation()
+citation("psych")
+citation("lme4")
+```
+
+
+# Import libraries
+
+```{r libraries}
+packages = c("psych", "readxl","readr", "magrittr", "reshape2","ggpubr", "ltm","janitor", "PerformanceAnalytics", "tidyverse", "lme4", "ggforce", "cowplot", "car") # car: companionto applied regression
+
+## Now load or install&load all
+package.check <- lapply(
+  packages,
+  FUN = function(x) {
+    if (!require(x, character.only = TRUE)) {
+      install.packages(x, dependencies = TRUE)
+      library(x, character.only = TRUE)
+    }
+  }
+)
+
+source("useful_functions.R")
+```
+
+# Load Data
+## Live Concert
+```{r}
+df.full<-readRDS(file = "../output/Prepared_Data.Rda")
+
+# rename ParticipantCode to Pt_ID because that is the name I began by using here.
+names(df.full)[1]<-"Pt_ID"
+```
+
+```{r}
+dat<-df.full%>%
+  select(Pt_ID, group, age, EC,AIMS,musician_status, fan, perceive_Bach:style_Bach)%>%
+  filter(group == "Live")%>%
+  select(-group)
+```
+
+## Follow up study
+```{r}
+# raw
+rawurlfile = "https://raw.githubusercontent.com/finn42/Bach_Viz_Responses/main/data_input/raw.csv"
+raw<-read_csv(url(rawurlfile))
+
+# edited
+editedurlfile="https://raw.githubusercontent.com/finn42/Bach_Viz_Responses/main/data_input/edited.csv"
+edited<-read_csv(url(editedurlfile))
+```
+# Organize data
+## Online follow-up
+
+Add ID column
+```{r}
+edited<-tibble::rowid_to_column(edited, "Pt_ID")
+```
+
+**Sort data into simple and complex**
+Half of the participants viewed the simple first and half the complex first. You can determine who received which stimulus based on if they have NA in complex1 and not NA in simple 1 then they watched the simple video first. 
+
+- I will need to also keep track of if they viewed the simple or the complex first
+
+Label as simple or complex first or second. 
+
+Note: participants could have seen any combination of complex and simple.(e.g. 1C, 1S or 2C or 2S)
+```{r}
+edited<-edited%>%mutate(type1 = case_when(
+    !is.na(simple1) ~ "Simple",
+    !is.na(complex1) ~ "Complex",
+    ))
+
+edited<-edited%>%mutate(type2 = case_when(
+    !is.na(simple2) ~ "Simple",
+    !is.na(complex2) ~ "Complex",
+    ))
+```
+
+Drop the unnecessary data of continuous ratings
+```{r}
+edited<-edited%>%select(!c(complex1, simple1, complex2, simple2))
+```
+
+Desired colnames
+```{r}
+col_names<-names(dat)[7:length(dat)]
+print(col_names)
+```
+Which cols correspond to the first video and which the second?
+```{r}
+# questions on the first video 
+transpose(raw[1, c('Q3', 'Q4', 'Q5', 'Q6', 'Q7', 'Q8', 'Q9','Q11', 'Q12')]) # questions corresponding to column labels
+
+# questions on the second video 
+transpose(raw[1, c('Q21', 'Q22', 'Q23', 'Q24', 'Q25', 'Q26', 'Q27')]) # questions corresponding to column labels
+
+# questions on personal chars 
+transpose(raw[1, c('Q49', 'Q52', 'Q53', 'Q54', 'Q58')]) # questions corresponding to column labels
+```
+
+Rename personal Characteristic cols
+```{r}
+colnames(edited)[which(names(edited) == "Q49")] <- "quiz"
+colnames(edited)[which(names(edited) == "Q52")] <- "age"
+colnames(edited)[which(names(edited) == "Q53")] <- "gender"
+colnames(edited)[which(names(edited) == "Q54")] <- "musician_status"
+```
+
+We also had a question that was a quiz question to truly test participants' understanding of the visualization:
+
+Please select the statement that is most correct.
+X The color of the discs corresponded to the emotion in the music.
+X Each line corresponded to a different string on the violin.
+--> Each disc corresponded to a different instrument.
+X The color of the lines corresponded to the harmonic color of the music.
+
+Calculate quiz result
+```{r}
+edited$quiz_result<-0
+edited$quiz_result[edited$quiz==3]<-1
+```
+
+Rename the columns based on if they viewed the simple or complex first
+
+To do this, I need to create new dataframes.
+```{r}
+# first set of Qs
+first_video<-edited%>%select(Pt_ID,type1, Q3:Q12)
+# second set of Qs
+second_video<-edited%>%select(Pt_ID, type2, Q21:Q27)
+```
+
+Rename cols
+```{r}
+names(first_video)[3:11]<-col_names
+names(second_video)[3:9]<-col_names[1:(length(col_names)-2)]
+```
+
+Pivot longer
+```{r}
+first_long<-first_video%>%
+  pivot_longer(!c(Pt_ID,type1), names_to = "question", values_to = "response")
+
+second_long<-second_video%>%
+  pivot_longer(!c(Pt_ID,type2), names_to = "question", values_to = "response")
+```
+
+Rename type
+```{r}
+colnames(first_long)[2]<-"type"
+colnames(second_long)[2]<-"type"
+
+first_long$order<-"first"
+second_long$order<-"second"
+
+long<-rbind(first_long, second_long)
+long$group<-"Online"
+```
+
+Pivot wider
+```{r}
+pc<-edited%>%select(Pt_ID, age, musician_status)
+online_df<-full_join(long, pc, by = "Pt_ID")
+online_df.wide<-online_df%>%pivot_wider(names_from = question, values_from= response)
+```
+
+Factor musician status
+```{r}
+online_df.wide$musician_status<-factor(online_df.wide$musician_status)
+online_df.wide$musician_status<-fct_collapse(online_df.wide$musician_status,"Tone-deaf" = "1", "Nonmusician" = "2", "Music-loving nonmusician" ="3", "Amateur musician" = "4", "Serious amateur musician" = "5", "Semiprofessional musician"= "6", "Professional musician" = "7")
+
+online_df.wide$Pt_ID<-factor(online_df.wide$Pt_ID)
+```
+
+The scale was 1-7 for the familiar and style items therefore subtract 1 to be on the same 0-6 scale as in the live data
+```{r}
+# if statement to make sure this does not happen twice. 
+if(max(online_df.wide$familiar_Bach, na.rm = TRUE) == 7){
+  online_df.wide$familiar_Bach<-online_df.wide$familiar_Bach-1
+}
+if(max(online_df.wide$style_Bach, na.rm = TRUE) == 7){
+  online_df.wide$style_Bach<-online_df.wide$style_Bach-1
+}
+```
+
+## Live
+Remove the cols that are not in the online data
+```{r}
+names(dat)
+live_dat<-dat%>%select(-EC, -AIMS, -fan)
+
+live_dat$group<-"Live"
+live_dat$type<-"Complex"
+live_dat$order<-"live"
+```
+## Join together
+Join the online and the concert results. 
+```{r}
+full_data<-full_join(live_dat, online_df.wide)
+```
+Convert to long again
+```{r}
+other_vars<-c("Pt_ID", "age", "musician_status", "group", "type","order")
+
+full_data.long<-full_data%>%
+  pivot_longer(!other_vars, names_to = "question", values_to = "response")
+
+full_data.long$question<-factor(full_data.long$question, levels = c("perceive_Bach", "instruments_Bach","understanding_Bach", "augment_Bach", "disturb_Bach", "enhance_Bach", "emotionally_moved_Bach", "familiar_Bach","style_Bach"), labels = c("Perceive", "Instruments","Understanding", "Augment", "Disturb", "Enhance", "Moved", "Familiar","Style"))
+
+scale_five<-c("Perceive", "Instruments","Understanding", "Augment", "Disturb", "Enhance", "Moved")
+full_data.long$facet<-"7-item scale"
+full_data.long$facet[full_data.long$question %in% scale_five]<-"5-item scale"
+
+full_data.long$facet_group[full_data.long$type == "Simple"]<-"Online - Simple"
+full_data.long$facet_group[full_data.long$type == "Complex"]<-"Online - Complex"
+full_data.long$facet_group[full_data.long$group == "Live"]<-"Live"
+
+full_data.long$facet_group<-factor(full_data.long$facet_group, levels = c("Live", "Online - Simple", "Online - Complex"))
+
+# Why are there NA in facet_group?
+## Because Participant 32 in the online experiment did not respond in the live rating of the second piece at all therefore we can remove the NAs that exist for this participant
+full_data.long<-full_data.long%>%filter(!(Pt_ID == "32" & is.na(type)))
+```
+# Visualize
+### Complex: Live versus Online - Stacked bar chart
+```{r}
+Title = "Simple Bach Visualization"
+
+plot_data<-full_data.long%>%filter(question %in% scale_five)%>%filter(type == "Complex")%>%filter(!is.na(response))
+
+plot_data$Response<-factor(plot_data$response, levels = c("5", "4", "3", "2", "1"), labels = c("5 Totally", "4", "3", "2", "1 Not at all"))
+
+# Put the sample size in the subtitle
+n = plot_data%>%group_by(group)%>%summarise(n = n_distinct(Pt_ID))
+
+Subtitle = paste0("Live (n = ", n$n[n$group == "Live"], ") and Online (n = ", n$n[n$group == "Online"],")")
+
+plot_data%>%ggplot(aes(x = question, fill = Response))+
+  geom_bar(position = "fill")+
+  labs(title=Title, subtitle = Subtitle)+
+  scale_fill_brewer(palette = "Reds", direction = -1) +
+  theme_minimal()+
+  xlab("Question")+
+  ylab("Proportion")+
+  facet_grid(rows = vars(group)) +
+  theme(axis.text.x = element_text(angle = 30)) #, vjust = 0.5, hjust=1))
+
+graphname<-paste0("../plots/Bar_",Title,"subtitle.png")
+
+ggsave(graphname, 
+       width = 15, 
+       height = 10, 
+       units = 'cm', 
+       dpi = 500)
+  
+```
+
+
+## Online: Complex versus simple
+
+```{r}
+Title = "Online Bach Visualization"
+
+plot_data<-full_data.long%>%filter(question %in% scale_five)%>%filter(group == "Online")
+
+plot_data$Response<-factor(plot_data$response, levels = c("5", "4", "3", "2", "1"), labels = c("5 Totally", "4", "3", "2", "1 Not at all"))
+
+plot_data$type<-factor(plot_data$type, levels = c("Simple", "Complex"))
+
+# Put the sample size in the subtitle
+n = plot_data%>%group_by(type)%>%summarise(n = n_distinct(Pt_ID))
+
+Subtitle = paste0("Simple (n = ", n$n[n$type == "Simple"], ") and Complex (n = ", n$n[n$type == "Complex"],")")
+
+plot_data%>%ggplot(aes(x = question, fill = Response))+
+  geom_bar(position = "fill")+
+  labs(title=Title, subtitle = Subtitle)+
+  scale_fill_brewer(palette = "Reds", direction = -1) +
+  theme_minimal()+
+  xlab("Question")+
+  ylab("Proportion")+
+  facet_grid(rows = vars(type)) +
+  theme(axis.text.x = element_text(angle = 30)) #, vjust = 0.5, hjust=1))
+
+graphname<-paste0("../plots/Bar_Complex_Simple",Title,".png")
+
+ggsave(graphname, 
+       width = 15, 
+       height = 10, 
+       units = 'cm', 
+       dpi = 500)
+```
+
+## Single chart: Live, Simple, Complex
+When comparing live to simple and simple to complex, we are having a repetition of information. 
+Additionally, we could make separate plots to give them separate colors and then combine the plots with cowplot for example. 
+
+```{r}
+Title = "Bach Visualization"
+
+# Live
+plot_data<-full_data.long%>%filter(question %in% scale_five)%>%filter(group == "Live")%>%filter(!is.na(response))
+
+n_Live = plot_data%>%summarise(n = n_distinct(Pt_ID))
+
+Subtitle = paste0("Live Complex (n = ", n_Live$n, ")")
+
+plot_data$Response<-factor(plot_data$response, levels = c("5", "4", "3", "2", "1"), labels = c("5 Totally", "4", "3", "2", "1 Not at all"))
+
+p_live<-plot_data%>%ggplot(aes(x = question, fill = Response))+
+  geom_bar(position = "fill")+
+  labs(title=Title, subtitle = Subtitle)+
+  scale_fill_brewer(palette = "Reds", direction = -1, name = "") +
+  theme_minimal()+
+  xlab("")+
+  ylab("Proportion")+
+  theme(axis.text.x = element_blank())
+  #theme(axis.text.x = element_text(angle = 30)) #, vjust = 0.5, hjust=1))
+
+# Complex
+plot_data<-full_data.long%>%filter(question %in% scale_five)%>%filter(group == "Online" & type == "Complex")%>%filter(!is.na(response))
+
+n_Complex = plot_data%>%summarise(n = n_distinct(Pt_ID))
+
+Subtitle = paste0("Online Complex (n = ", n_Complex$n, ")")
+
+plot_data$Response<-factor(plot_data$response, levels = c("5", "4", "3", "2", "1"), labels = c("5 Totally", "4", "3", "2", "1 Not at all"))
+
+p_complex<-plot_data%>%ggplot(aes(x = question, fill = Response))+
+  geom_bar(position = "fill")+
+  labs(subtitle = Subtitle)+
+  scale_fill_brewer(palette = "YlGn", direction = -1, name = "") + # same palette to reflect that they are the same group!@
+  theme_minimal()+
+  xlab("")+
+  ylab("Proportion")+
+  theme(axis.text.x = element_blank())
+  #theme(axis.text.x = element_text(angle = 30, vjust = 1, hjust=1))
+
+p_complex
+
+# Simple
+plot_data<-full_data.long%>%filter(question %in% scale_five)%>%filter(group == "Online" & type == "Simple")%>%filter(!is.na(response))
+
+n_Simple = plot_data%>%summarise(n = n_distinct(Pt_ID))
+
+Subtitle = paste0("Online Simple (n = ", n_Simple$n,")")
+
+plot_data$Response<-factor(plot_data$response, levels = c("5", "4", "3", "2", "1"), labels = c("5 Totally", "4", "3", "2", "1 Not at all"))
+
+p_simple<-plot_data%>%ggplot(aes(x = question, fill = Response))+
+  geom_bar(position = "fill")+
+  labs(subtitle = Subtitle)+
+  scale_fill_brewer(palette = "YlGn", direction = -1, name = "") +
+  theme_minimal()+
+  xlab("")+
+  ylab("Proportion")+
+  #theme(axis.text.x = element_blank())
+  theme(axis.text.x = element_text(angle = 30)) #, vjust = 0.5, hjust=1))
+
+plot_grid(
+  p_live, p_complex, p_simple,
+  labels = "AUTO", ncol = 1,
+  rel_heights = c(1.1,1,1.2)
+)
+
+graphname<-paste0("../plots/Bar_3_",Title,".png")
+
+ggsave(graphname, 
+       width = 15, 
+       height = 20, 
+       units = 'cm', 
+       dpi = 500)
+```
+
+## Single chart: Live, First: Simple, Complex; Second: Simple, Complex
+The order of presentation may be important therefore make a plot that splits information into simple first, simple second, complex first, complex second
+
+```{r}
+Title = "Bach Visualization"
+
+# Live
+plot_data<-full_data.long%>%filter(question %in% scale_five)%>%filter(group == "Live")%>%filter(!is.na(response))
+
+n_Live = plot_data%>%summarise(n = n_distinct(Pt_ID))
+
+Subtitle = paste0("Live: Complex (n = ", n_Live$n, ")")
+
+plot_data$Response<-factor(plot_data$response, levels = c("5", "4", "3", "2", "1"), labels = c("5 Totally", "4", "3", "2", "1 Not at all"))
+
+p_live<-plot_data%>%ggplot(aes(x = question, fill = Response))+
+  geom_bar(position = "fill")+
+  labs(title=Title, subtitle = Subtitle)+
+  scale_fill_brewer(palette = "Reds", direction = -1, name = "") +
+  theme_minimal()+
+  xlab("")+
+  ylab("Proportion")+
+  theme(axis.text.x = element_blank())
+  #theme(axis.text.x = element_text(angle = 30)) #, vjust = 0.5, hjust=1))
+
+# Complex First
+plot_data<-full_data.long%>%filter(question %in% scale_five)%>%filter(group == "Online" & type == "Complex" & order == "first")%>%filter(!is.na(response))
+
+n_Complex_First = plot_data%>%summarise(n = n_distinct(Pt_ID))
+
+Subtitle = paste0("Online: Complex First (n = ", n_Complex_First$n, ")")
+
+plot_data$Response<-factor(plot_data$response, levels = c("5", "4", "3", "2", "1"), labels = c("5 Totally", "4", "3", "2", "1 Not at all"))
+
+p_complex_first<-plot_data%>%ggplot(aes(x = question, fill = Response))+
+  geom_bar(position = "fill")+
+  labs(subtitle = Subtitle)+
+  scale_fill_brewer(palette = "YlGn", direction = -1, name = "") + # same palette to reflect that they are the same group!@
+  theme_minimal()+
+  xlab("")+
+  ylab("Proportion")+
+  theme(axis.text.x = element_blank())
+  #theme(axis.text.x = element_text(angle = 30, vjust = 1, hjust=1))
+
+p_complex_first
+
+# Simple First
+plot_data<-full_data.long%>%filter(question %in% scale_five)%>%filter(group == "Online" & type == "Simple" & order == "first")%>%filter(!is.na(response))
+
+n_Simple_first = plot_data%>%summarise(n = n_distinct(Pt_ID))
+
+Subtitle = paste0("Online: Simple First (n = ", n_Simple_first$n,")")
+
+plot_data$Response<-factor(plot_data$response, levels = c("5", "4", "3", "2", "1"), labels = c("5 Totally", "4", "3", "2", "1 Not at all"))
+
+p_simple_first<-plot_data%>%ggplot(aes(x = question, fill = Response))+
+  geom_bar(position = "fill")+
+  labs(subtitle = Subtitle)+
+  scale_fill_brewer(palette = "YlGn", direction = -1, name = "") +
+  theme_minimal()+
+  xlab("")+
+  ylab("Proportion")+
+  theme(axis.text.x = element_blank())
+  #theme(axis.text.x = element_text(angle = 30)) #, vjust = 0.5, hjust=1))
+
+# Complex Second
+plot_data<-full_data.long%>%filter(question %in% scale_five)%>%filter(group == "Online" & type == "Complex" & order == "second")%>%filter(!is.na(response))
+
+n_Complex_Second = plot_data%>%summarise(n = n_distinct(Pt_ID))
+
+Subtitle = paste0("Online: Complex Second (n = ", n_Complex_Second$n, ")")
+
+plot_data$Response<-factor(plot_data$response, levels = c("5", "4", "3", "2", "1"), labels = c("5 Totally", "4", "3", "2", "1 Not at all"))
+
+p_complex_second<-plot_data%>%ggplot(aes(x = question, fill = Response))+
+  geom_bar(position = "fill")+
+  labs(subtitle = Subtitle)+
+  scale_fill_brewer(palette = "YlGn", direction = -1, name = "") + # same palette to reflect that they are the same group!@
+  theme_minimal()+
+  xlab("")+
+  ylab("Proportion")+
+  theme(axis.text.x = element_blank())
+  #theme(axis.text.x = element_text(angle = 30, vjust = 1, hjust=1))
+
+p_complex_second
+
+# Simple First
+plot_data<-full_data.long%>%filter(question %in% scale_five)%>%filter(group == "Online" & type == "Simple" & order == "second")%>%filter(!is.na(response))
+
+n_Simple_second = plot_data%>%summarise(n = n_distinct(Pt_ID))
+
+Subtitle = paste0("Online: Simple Second (n = ", n_Simple_second$n,")")
+
+plot_data$Response<-factor(plot_data$response, levels = c("5", "4", "3", "2", "1"), labels = c("5 Totally", "4", "3", "2", "1 Not at all"))
+
+p_simple_second<-plot_data%>%ggplot(aes(x = question, fill = Response))+
+  geom_bar(position = "fill")+
+  labs(subtitle = Subtitle)+
+  scale_fill_brewer(palette = "YlGn", direction = -1, name = "") +
+  theme_minimal()+
+  xlab("")+
+  ylab("Proportion")+
+  #theme(axis.text.x = element_blank())
+  theme(axis.text.x = element_text(angle = 30)) #, vjust = 0.5, hjust=1))
+
+plot_grid(
+  p_live, p_complex_first, p_simple_first, p_complex_second, p_simple_second,
+  labels = "AUTO", ncol = 1,
+  rel_heights = c(1.15,1,1,1,1.3)
+)
+
+graphname<-paste0("../plots/Bar_5_",Title,".png")
+
+ggsave(graphname, 
+       width = 15, 
+       height = 25, 
+       units = 'cm', 
+       dpi = 500)
+```
+
+
+## Online: SS, SC, CS, CC
+Add subgroup class: SS, SC, CS, CC
+```{r}
+necessary_info<-online_df.wide%>%select(Pt_ID, order, type)
+necessary_info.wide<-necessary_info%>%pivot_wider(names_from = order, values_from = type)
+necessary_info.wide$Subgroup[necessary_info.wide$first == "Simple"&necessary_info.wide$second == "Simple"]<-"SS"
+necessary_info.wide$Subgroup[necessary_info.wide$first == "Simple"&necessary_info.wide$second == "Complex"]<-"SC"
+necessary_info.wide$Subgroup[necessary_info.wide$first == "Complex"&necessary_info.wide$second == "Simple"]<-"CS"
+necessary_info.wide$Subgroup[necessary_info.wide$first == "Complex"&necessary_info.wide$second == "Complex"]<-"CC"
+
+subgroups<-necessary_info.wide%>%select(Pt_ID, Subgroup)
+
+#join with full_data.long
+full_data.long<-full_data.long%>%full_join(subgroups, by = "Pt_ID")
+```
+
+```{r}
+Title = "Online Bach Visualization"
+
+plot_data<-full_data.long%>%filter(question %in% scale_five)%>%filter(group == "Online")
+plot_data$Subgroup<-factor(plot_data$Subgroup, levels = c("SS", "SC", "CS", "CC"))
+
+# Put the sample size in the subtitle
+
+n = plot_data%>%group_by(Subgroup)%>%summarise(n = n_distinct(Pt_ID))
+
+Subtitle = paste0("SS =", n$n[n$Subgroup == "SS"], ", SC = ", n$n[n$Subgroup == "SC"],", CS = ", n$n[n$Subgroup == "CS"],", CC =", n$n[n$Subgroup =="CC"])
+
+summary_data<-plot_data%>%group_by(Subgroup, order, question)%>%summarise(Response = mean(response))%>%filter(!is.na(Subgroup))
+
+summary_data%>%ggplot(aes(x = order, y = Response, color = Subgroup, group = Subgroup))+
+  geom_line()+
+  #geom_point()+
+  labs(title=Title, subtitle = Subtitle)+
+  theme_DSQ()+
+  xlab("Question")+
+  ylab("Response")+
+  facet_wrap(. ~ question) +
+  theme(axis.text.x = element_text(angle = 30)) #, vjust = 0.5, hjust=1))
+
+graphname<-paste0("../plots/Line_",Title,".png")
+
+ggsave(graphname, 
+       width = 15, 
+       height = 15, 
+       units = 'cm', 
+       dpi = 500)
+```
+## Familiar with Piece and Style
+Visualize differences between the audiences on their familiarity
+Were you familiar with the music that you heard? 0 = I have never heard it before - 6 - I am very familiar with the music
+Were you familiar with this style of music (Bach fugues)? 0 = I have never heard it before  - 6 = I am very familiar with this type of music
+```{r}
+plot_data<-full_data.long%>%filter(!question %in% scale_five)%>%filter(! is.na(response))
+
+plot_data$Response<-factor(plot_data$response, levels = c("6", "5", "4", "3", "2", "1", "0"), labels = c("6","5", "4", "3", "2", "1", "0"))
+
+Title= "Familiar with Piece and Style"
+Subtitle = "Live"
+
+fam_live<-plot_data%>%filter(group == "Live")%>%ggplot(aes(x = question, fill = Response))+
+  geom_bar(position = "fill")+
+  labs(title = Title, subtitle = Subtitle)+
+  scale_fill_brewer(palette = "Reds", direction = -1, name = "") + # same palette to reflect that they are the same group!@
+  theme_minimal()+
+  #facet_grid(rows = vars(group)) +
+  xlab("")+
+  ylab("Proportion")+
+  theme(axis.text.x = element_blank())
+  #theme(axis.text.x = element_text(angle = 30, vjust = 1, hjust=1))
+
+Subtitle = "Online"
+fam_online<-plot_data%>%filter(group == "Online")%>%ggplot(aes(x = question, fill = Response))+
+  geom_bar(position = "fill")+
+  labs(subtitle = Subtitle)+
+  scale_fill_brewer(palette = "YlGn", direction = -1, name = "") + # same palette to reflect that they are the same group!@
+  theme_minimal()+
+  #facet_grid(rows = vars(group)) +
+  xlab("")+
+  ylab("Proportion")+
+  #theme(axis.text.x = element_blank())
+  theme(axis.text.x = element_text(angle = 30, vjust = 1, hjust=1))
+
+plot_grid(
+  fam_live, fam_online,
+  labels = "AUTO", ncol = 1
+  #rel_heights = c(1.1,1,1.2)
+)
+
+graphname<-paste0("../plots/Bar_",Title,".png")
+
+ggsave(graphname, 
+       width = 10, 
+       height = 15, 
+       units = 'cm', 
+       dpi = 500)
+```
+
+
+## Violin Plot: Live only
+```{r}
+# transform the response scale of the familiarity questions to 1-5 
+## 0-->1(*5/7 + 1)
+#dat<-dat%>%mutate(style_Bach_t = (style_Bach+1)*5/7,familiar_Bach_t = (familiar_Bach+1)*5/7)
+
+# Or just make a facet grid so that you can have different y scales? See below
+#facet<-c(1,1,1,1,1,1,1,2,2)
+
+personal_chars<-c("Pt_ID", "age", "EC", "AIMS","musician_status", "fan")
+
+dat_long<-dat%>%
+  pivot_longer(!all_of(personal_chars), names_to = "question", values_to = "response")
+
+dat_long$question<-factor(dat_long$question, levels = c("perceive_Bach", "instruments_Bach","understanding_Bach", "augment_Bach", "disturb_Bach", "enhance_Bach", "emotionally_moved_Bach", "familiar_Bach","style_Bach"), labels = c("Perceive", "Instruments","Understanding", "Augment", "Disturb", "Enhance", "Moved", "Familiar","Style"))
+
+scale_five<-c("Perceive", "Instruments","Understanding", "Augment", "Disturb", "Enhance", "Moved")
+dat_long$facet<-"7-item scale"
+dat_long$facet[dat_long$question %in% scale_five]<-"5-item scale"
+```
+
+### Facet: 5 and 7-item scale 
+```{r}
+Title = "Bach Visualization"
+
+dat_long%>%ggplot(aes(x = question, y = response))+
+  geom_violin(show.legend= FALSE, fill = "#b34036")+
+  labs(title=Title)+
+  theme_DSQ()+
+  xlab("Question")+
+  ylab("Response")+
+  #facet_wrap(~facet, scales = "free")+
+  #facet_grid(. ~ facet, scales = "free", space='free') +
+  ggforce::facet_row(vars(facet), scales = 'free', space = 'free')+
+  theme(axis.text.x = element_text(angle = 30)) #, vjust = 0.5, hjust=1))
+
+graphname<-paste0("../plots/Violin_",Title, ".png")
+ggsave(graphname, 
+       width = 15, 
+       height = 9, 
+       units = 'cm', 
+       dpi = 500)
+```
+
+# Statistical Analysis
+## Participants
+
+How many participants participated?
+
+86 participants answered the Bach questionnaire completely. 
+1 participant was missing one response (perceive), 
+```{r}
+# ID pts who did not answer any Bach survey questions
+
+# This line of code drops any participant with even 1 NA in the Bach questionnaire. This indicates that 86 participants answered the Bach questionnaire completely. 
+#demo_dat<-full_data%>%drop_na(contains("Bach"))%>%select(Pt_ID, group, age, musician_status)%>%distinct()
+
+# Instead we need to drop rows with all NA in the cols
+count_dat<-full_data%>%select(Pt_ID, group, contains("Bach"))
+count_dat<-count_dat[rowSums(is.na(count_dat)) != ncol(count_dat)-2,] # -2 because need to retain Pt_ID and group in the df
+
+count_dat%>%group_by(group)%>%summarise(count = n())
+
+# check which vars the 3 participants missed.
+live_count_dat<-count_dat%>%filter(group == "Live")
+## 1 missed filling "perceive", 2 missed filling "disturb". These participants had no other NAs.
+```
+
+Compare demographics between audiences.
+Compare age and musician status between live and online groups.
+```{r}
+demo_dat<-full_data%>%drop_na(contains("Bach"))%>%select(Pt_ID, group, age, musician_status)%>%distinct()
+
+#age
+demo_dat%>%group_by(group)%>%summarise(mean = mean(age, na.rm = TRUE), sd = sd(age, na.rm = TRUE))
+
+#musician status
+test<-demo_dat%>%group_by(group,musician_status)%>%summarise(count = n())
+test2<-pivot_wider(test, names_from = group, values_from = count )
+write.table(test2, file = "musician_status_Bach_live_v_online.txt", sep = ",", quote = FALSE, row.names = F)
+
+library(xtable)
+print(xtable(test2, type = "latex"), file = "musician_status_Bach_live_v_online.tex")
+```
+
+### Age: Two-sample t-test
+The live audience was significantly older than the online audience.
+```{r}
+t.test(demo_dat$age~demo_dat$group)
+```
+
+### Musician status (ordinal) Kruskal Wallis test
+The Kruskal Wallis test is used when you have one independent variable with two or more levels and an ordinal dependent variable.
+
+The live audience was less musically sophisticated than the online participants
+```{r}
+ggplot(demo_dat, aes(x = musician_status))+geom_bar()+facet_grid(cols = vars(group)) # these distributions don't really look the same 
+
+kruskal.test(musician_status~group, data = demo_dat)
+```
+
+## Correlations
+### Live 
+take a glance with the performance analytics correlation chart
+
+Reload data
+```{r}
+personal_chars<-c("Pt_ID", "age", "EC", "AIMS","musician_status", "fan")
+
+dat<-df.full%>%
+  select(Pt_ID, group, age, EC,AIMS,musician_status, fan, perceive_Bach:style_Bach)%>%
+  filter(group == "Live")%>%
+  select(-group)
+```
+
+```{r}
+cor_data_Bach<-dat%>%select(!Pt_ID)
+```
+
+```{r}
+#change musician_status to ranking
+cor_data_Bach$musician_status<-as.numeric(cor_data_Bach$musician_status)
+
+#Cross correlation
+chart.Correlation(cor_data_Bach, method = "pearson")
+chart.Correlation(cor_data_Bach, method = "spearman")
+chart.Correlation(cor_data_Bach, method = "kendall")
+```
+
+```{r}
+#select only complete
+cor_data_Bach_nona<-na.omit(cor_data_Bach) # however maybe you could retain more data if you simply got rid of the age col since this seems to be what is missing most often.
+names(cor_data_Bach_nona)<-c("Age", "Empathic Concern","AIMS", "Musician Status", "Fan-status", "Perceive", "Instruments","Understanding", "Augment", "Disturb", "Enhance", "Moved", "Familiar","Style")
+
+# check number of samples
+samples<-nrow(cor_data_Bach_nona)
+colours_DSQ<-c("#2d769a", "white","#b34036")
+title = ""
+#title = "Bach Visualization"
+subtitle = paste0("Kendall Correlations (BH adj) (n = ", samples, ")")
+chart.correlation(cor_data_Bach_nona, colours_DSQ, title, subtitle) #moved the cross-correlation code to the useful_functions script to make this more tidy.
+
+graphname<-paste0("../plots/Kendall-Correlations_BachVis.png")
+ggsave(graphname, 
+       width = 10, 
+       height = 9, 
+       units = 'cm', 
+       dpi = 500)
+```
+### Remove age
+from the Corr chart shwoign live participants to be able to retain more participants
+```{r}
+cor_data_Bach<-dat%>%select(!age)
+
+#select only complete
+cor_data_Bach_nona<-na.omit(cor_data_Bach) # however maybe you could retain more data if you simply got rid of the age col since this seems to be what is missing most often.
+names(cor_data_Bach_nona)<-c("Age", "Empathic Concern","AIMS", "Musician Status", "Fan-status", "Perceive", "Instruments","Understanding", "Augment", "Disturb", "Enhance", "Moved", "Familiar","Style")
+
+# check number of samples
+samples<-nrow(cor_data_Bach_nona)
+colours_DSQ<-c("#2d769a", "white","#b34036")
+title = ""
+#title = "Bach Visualization"
+subtitle = paste0("Kendall Correlations (BH adj) (n = ", samples, ")")
+chart.correlation(cor_data_Bach_nona, colours_DSQ, title, subtitle) #moved the cross-correlation code to the useful_functions script to make this more tidy.
+
+graphname<-paste0("../plots/Kendall-Correlations_noAge_BachVis.png")
+ggsave(graphname, 
+       width = 10, 
+       height = 9, 
+       units = 'cm', 
+       dpi = 500)
+```
+### Live and Online
+
+```{r}
+cor_data_Bach<-full_data%>%select(age, musician_status, perceive_Bach:style_Bach) # note not Pt_ID, group, 
+
+#change musician_status to ranking
+cor_data_Bach$musician_status<-as.numeric(cor_data_Bach$musician_status)
+
+#select only complete
+cor_data_Bach_nona<-na.omit(cor_data_Bach) # however maybe you could retain more data if you simply got rid of the age col since this seems to be what is missing most often.
+names(cor_data_Bach_nona)<-c("Age", "Musician Status", "Perceive", "Instruments","Understanding", "Augment", "Disturb", "Enhance", "Moved", "Familiar","Style")
+
+# check number of samples
+samples<-nrow(cor_data_Bach_nona)
+colours_DSQ<-c("#2d769a", "white","#b34036")
+title = ""
+#title = "Bach Visualization"
+subtitle = paste0("Kendall Correlations (BH adj) (n = ", samples, ")")
+chart.correlation(cor_data_Bach_nona, colours_DSQ, title, subtitle) #moved the cross-correlation code to the useful_functions script to make this more tidy.
+
+graphname<-paste0("../plots/Kendall-Correlations-Live_and_Online_BachVis.png")
+ggsave(graphname, 
+       width = 10, 
+       height = 9, 
+       units = 'cm', 
+       dpi = 500)
+
+```
+
+
+## Reliability: Omega
+### Live
+```{r}
+visualization_items_live<-dat%>%select(-personal_chars, -familiar_Bach, -style_Bach)
+omega(visualization_items_live)
+```
+### Online only
+```{r}
+visualization_items_online<-full_data%>%filter(group == "Online")%>%select(perceive_Bach:emotionally_moved_Bach)
+omega(visualization_items_online)
+```
+
+### Live and Online
+```{r}
+visualization_items_all<-full_data%>%select(perceive_Bach:emotionally_moved_Bach)
+omega(visualization_items_all)
+```
+
+## Factor analysis
+To reduce dimensionality of the questions on the visualization so that we can then do model testing to understand the impact of musical expertise and familiarity on the experience.
+
+### Live and Online
+Redo the FA with full_data: live and online
+
+```{r}
+data_for_fa<-full_data%>%select(Pt_ID, perceive_Bach:emotionally_moved_Bach)
+fa_dat<-data_for_fa%>%select(perceive_Bach:emotionally_moved_Bach)
+```
+
+```{r}
+pairs.panels(fa_dat)
+# Test for the number of factors using parallel analysis or very simple structure
+fa.parallel(fa_dat) #this suggests that there are 2 factors and 1 component
+vss(fa_dat) # this suggests that the complexity 1 solution achieves max at 1 factor and complexity 2 solution achieve maximum at 2 factors
+```
+#### One-factor Solution
+```{r}
+visualization_factor_analysis_1<-fa(fa_dat, 1)
+visualization_factor_analysis_1
+plot(visualization_factor_analysis_1)
+fa.diagram(visualization_factor_analysis_1)
+```
+#### Two-factor Solution
+It is interesting to see its structure because now there is a factor for understanding and an emotional/enhancing factor. But the understanding and enhancing factors are highly correlated.
+```{r}
+visualization_factor_analysis_2<-fa(fa_dat, 2)
+visualization_factor_analysis_2
+plot(visualization_factor_analysis_2)
+fa.diagram(visualization_factor_analysis_2)
+```
+
+#### Add 2FA factor scores to df
+```{r}
+visualization_factor_analysis_2_scores<-psych::factor.scores(fa_dat, visualization_factor_analysis_2)
+
+visualization_factors<-cbind(data_for_fa$Pt_ID,data.frame(visualization_factor_analysis_2_scores$scores))
+
+colnames(visualization_factors)<- c("Pt_ID","Understand","Enhance")
+
+cbind(visualization_factors$Pt_ID, full_data$Pt_ID)
+
+full_data<-cbind(full_data,visualization_factors[2:3])
+```
+
+## Factor Score Spearman Rank Correlations 
+```{r}
+fa_scores<-full_data%>%filter(group == "Live")%>%select(Pt_ID,Understand, Enhance)
+
+personal_char_list<-df.full%>%select(Pt_ID, age, EC,AIMS, musician_status, fan, familiar_Bach, style_Bach)
+
+fa_scores_and_pers_chars<-full_join(fa_scores, personal_char_list, by = "Pt_ID")
+
+fa_scores_and_pers_chars_nona<-fa_scores_and_pers_chars%>%select(-age, -Pt_ID)%>%na.omit()
+
+names(fa_scores_and_pers_chars_nona)<-c("Understand \n Factor", "Enhance \n Factor", "Empathy", "AIMS", "Musician Status", "Fanship", "Familiar Piece", "Familiar Style")
+# check number of samples
+samples<-nrow(fa_scores_and_pers_chars_nona)
+colours_DSQ<-c("#2d769a", "white","#b34036")
+title = "Factor Scores"
+# title = "Bach Visualization"
+subtitle = paste0("Spearman Correlations (BH adj) (n = ", samples, ")")
+chart.correlation.spearman(fa_scores_and_pers_chars_nona, colours_DSQ, title, subtitle) #moved the cross-correlation code to the useful_functions script to make this more tidy.
+
+graphname<-paste0("../plots/New_Spearman-Rank-Correlations", title, ".png")
+ggsave(graphname, 
+       width = 10, 
+       height = 9, 
+       units = 'cm', 
+       dpi = 500)
+```
+
+## Assess Group differences: Live versus Online
+Compare between live and online complex ratings
+IV: group - Live, Online Complex
+DV: Understand, Enhance
+
+guide: http://www.sthda.com/english/wiki/unpaired-two-samples-wilcoxon-test-in-r
+
+```{r}
+complex_data<-full_data%>%filter(type == "Complex" & order != "second")%>%drop_na(c(Understand, Enhance))
+
+#check assumptions
+complex_data%>%group_by(group)%>%summarise(W = shapiro.test(Understand)$statistic,
+                                          p = shapiro.test(Understand)$p.value)
+
+complex_data%>%group_by(group)%>%summarise(W = shapiro.test(Enhance)$statistic,
+                                          p = shapiro.test(Enhance)$p.value)
+
+# summarize data
+complex_data%>%group_by(group)%>%summarise(n = n())
+## understand
+complex_data%>%group_by(group)%>%summarise(mean = mean(Understand), SD = sd(Understand))
+## enhance
+complex_data%>%group_by(group)%>%summarise(mean = mean(Enhance), SD = sd(Enhance))
+
+# What are the effects of live versus online on understanding ratings?
+wilcox.test(Understand ~ group, data = complex_data,
+                   exact = FALSE)
+
+# What are the effects of live versus online on enhancement ratings?
+wilcox.test(Enhance ~ group, data = complex_data,
+                   exact = FALSE)
+
+```
+
+Visualize
+```{r}
+plot_data<-complex_data%>%select(Pt_ID,group, Understand, Enhance)
+
+long<-plot_data%>%pivot_longer(!c(Pt_ID, group), names_to = "factor", values_to = "response")
+
+ggplot(long, aes(x = group, y = response)) +
+  geom_boxplot(fill = "light blue") + 
+  geom_jitter(alpha = .5)+
+  stat_summary(fun=mean, geom="point", shape=10, size=3.5, color="black") + 
+  ggtitle("Live versus Online Complex") + 
+  facet_grid(cols = vars(factor))+
+  theme_bw() + theme(legend.position="none")
+```
+
+## Complexity differences: Online only
+Compare between online simple and online complex ratings
+IV: type - complex first, Simple first
+DV: Understand, Enhance
+
+Use only the first video they watched
+
+```{r}
+first_data<-full_data%>%filter(group == "Online" & order== "first")%>%drop_na(c(Understand, Enhance))
+
+#check assumptions
+first_data%>%group_by(type)%>%summarise(W = shapiro.test(Understand)$statistic,
+                                          p = shapiro.test(Understand)$p.value)
+
+# summarize data
+first_data%>%group_by(type)%>%summarise(n = n())
+## understand
+first_data%>%group_by(type)%>%summarise(mean = mean(Understand), SD = sd(Understand))
+## enhance
+first_data%>%group_by(group)%>%summarise(mean = mean(Enhance), SD = sd(Enhance))
+
+# What are the effects of complex versus simple on understanding ratings?
+wilcox.test(Understand ~ type, data = first_data,
+                   exact = FALSE)
+
+# What are the effects of live versus online on enhancement ratings?
+wilcox.test(Enhance ~ type, data = first_data,
+                   exact = FALSE)
+
+```
+## Compare the groups: SS, SC, CS, CC
+Add subgroup class: SS, SC, CS, CC
+
+DV:understand and enhance
+IV: type -  complex, simple; subgroup
+random intercept: Pt_ID
+```{r}
+## Online: SS, SC, CS, CC
+online_dat<-full_data%>%filter(group =="Online")
+
+# join with subgroups df created earlier
+online_dat<-online_dat%>%full_join(subgroups, by = "Pt_ID")
+
+online_dat<-online_dat%>%drop_na(Subgroup)
+```
+
+Normality is violated in every group
+```{r}
+#check assumptions
+online_dat%>%group_by(Subgroup)%>%summarise(W = shapiro.test(Understand)$statistic,
+                                          p = shapiro.test(Understand)$p.value)
+```
+
+
