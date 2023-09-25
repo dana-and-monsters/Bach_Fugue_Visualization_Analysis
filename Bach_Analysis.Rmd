@@ -735,7 +735,7 @@ chart.Correlation(cor_data_Bach, method = "kendall")
 ```{r}
 #select only complete
 cor_data_Bach_nona<-na.omit(cor_data_Bach) # however maybe you could retain more data if you simply got rid of the age col since this seems to be what is missing most often.
-names(cor_data_Bach_nona)<-c("Age", "Empathic Concern","AIMS", "Musician Status", "Fan-status", "Perceive", "Instruments","Understanding", "Augment", "Disturb", "Enhance", "Moved", "Familiar","Style")
+names(cor_data_Bach_nona)<-c("Age", "Empathic Concern","AIMS", "Musical Sophistication", "Fan-status", "Perceive", "Instruments","Understanding", "Augment", "Disturb", "Enhance", "Moved", "Familiar","Style")
 
 # check number of samples
 samples<-nrow(cor_data_Bach_nona)
@@ -870,7 +870,8 @@ cbind(visualization_factors$Pt_ID, full_data$Pt_ID)
 full_data<-cbind(full_data,visualization_factors[2:3])
 ```
 
-## Factor Score Spearman Rank Correlations 
+## Factor Score Kendall Rank Correlations 
+
 ```{r}
 fa_scores<-full_data%>%filter(group == "Live")%>%select(Pt_ID,Understand, Enhance)
 
@@ -886,13 +887,13 @@ samples<-nrow(fa_scores_and_pers_chars_nona)
 colours_DSQ<-c("#2d769a", "white","#b34036")
 title = "Factor Scores"
 # title = "Bach Visualization"
-subtitle = paste0("Spearman Correlations (BH adj) (n = ", samples, ")")
-chart.correlation.spearman(fa_scores_and_pers_chars_nona, colours_DSQ, title, subtitle) #moved the cross-correlation code to the useful_functions script to make this more tidy.
+subtitle = paste0("Kendall Correlations (BH adj) (n = ", samples, ")")
+chart.correlation(fa_scores_and_pers_chars_nona, colours_DSQ, title, subtitle) #moved the cross-correlation code to the useful_functions script to make this more tidy.
 
-graphname<-paste0("../plots/New_Spearman-Rank-Correlations", title, ".png")
+graphname<-paste0("../plots/New_Kendall-Correlations", title, ".png")
 ggsave(graphname, 
-       width = 10, 
-       height = 9, 
+       width = 9, 
+       height = 7, 
        units = 'cm', 
        dpi = 500)
 ```
