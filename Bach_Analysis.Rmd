@@ -42,6 +42,8 @@ df.full<-readRDS(file = "../output/Prepared_Data.Rda")
 names(df.full)[1]<-"Pt_ID"
 ```
 
+### save the df.full into an Rda for use with the 
+
 ```{r}
 dat<-df.full%>%
   select(Pt_ID, group, age, EC,AIMS,musician_status, fan, perceive_Bach:style_Bach)%>%
@@ -59,6 +61,12 @@ raw<-read_csv(url(rawurlfile))
 editedurlfile="https://raw.githubusercontent.com/finn42/Bach_Viz_Responses/main/data_input/edited.csv"
 edited<-read_csv(url(editedurlfile))
 ```
+
+### Save the edited dataframe for use in an anonymized code example
+```{r}
+#save(edited, file = "Online_Study_Data.rda")
+```
+
 # Organize data
 ## Online follow-up
 
@@ -130,6 +138,13 @@ Calculate quiz result
 edited$quiz_result<-0
 edited$quiz_result[edited$quiz==3]<-1
 ```
+
+How many participants answered the quiz correctly?
+```{r}
+edited%>%group_by(quiz)%>%summarise(n())
+edited%>%group_by(quiz_result)%>%summarise(n())
+```
+
 
 Rename the columns based on if they viewed the simple or complex first
 
@@ -735,7 +750,7 @@ chart.Correlation(cor_data_Bach, method = "kendall")
 ```{r}
 #select only complete
 cor_data_Bach_nona<-na.omit(cor_data_Bach) # however maybe you could retain more data if you simply got rid of the age col since this seems to be what is missing most often.
-names(cor_data_Bach_nona)<-c("Age", "Empathic Concern","AIMS", "Musical Sophistication", "Fan-status", "Perceive", "Instruments","Understanding", "Augment", "Disturb", "Enhance", "Moved", "Familiar","Style")
+names(cor_data_Bach_nona)<-c("Age", "Empathic Concern","AIMS", "Musician Status", "Fan-status", "Perceive", "Instruments","Understanding", "Augment", "Disturb", "Enhance", "Moved", "Familiar","Style")
 
 # check number of samples
 samples<-nrow(cor_data_Bach_nona)
@@ -870,8 +885,7 @@ cbind(visualization_factors$Pt_ID, full_data$Pt_ID)
 full_data<-cbind(full_data,visualization_factors[2:3])
 ```
 
-## Factor Score Kendall Rank Correlations 
-
+## Factor Score Spearman Rank Correlations 
 ```{r}
 fa_scores<-full_data%>%filter(group == "Live")%>%select(Pt_ID,Understand, Enhance)
 
@@ -887,13 +901,13 @@ samples<-nrow(fa_scores_and_pers_chars_nona)
 colours_DSQ<-c("#2d769a", "white","#b34036")
 title = "Factor Scores"
 # title = "Bach Visualization"
-subtitle = paste0("Kendall Correlations (BH adj) (n = ", samples, ")")
-chart.correlation(fa_scores_and_pers_chars_nona, colours_DSQ, title, subtitle) #moved the cross-correlation code to the useful_functions script to make this more tidy.
+subtitle = paste0("Spearman Correlations (BH adj) (n = ", samples, ")")
+chart.correlation.spearman(fa_scores_and_pers_chars_nona, colours_DSQ, title, subtitle) #moved the cross-correlation code to the useful_functions script to make this more tidy.
 
-graphname<-paste0("../plots/New_Kendall-Correlations", title, ".png")
+graphname<-paste0("../plots/New_Spearman-Rank-Correlations", title, ".png")
 ggsave(graphname, 
-       width = 9, 
-       height = 7, 
+       width = 10, 
+       height = 9, 
        units = 'cm', 
        dpi = 500)
 ```
@@ -998,6 +1012,11 @@ Normality is violated in every group
 #check assumptions
 online_dat%>%group_by(Subgroup)%>%summarise(W = shapiro.test(Understand)$statistic,
                                           p = shapiro.test(Understand)$p.value)
+```
+
+With high sample sizes, the shapiro test is easily violated. Check normality with qqplots.There are minor deviations from normality. Linear mixed effects modeling may be robust against minor deviations to normality, therefore you could still examine if differences could be attributed to subgroup.
+```{r}
+ggqqplot(online_dat, "Understand", ggtheme = theme_bw(), facet.by = "Subgroup")
 ```
 
 
