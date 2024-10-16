@@ -820,6 +820,38 @@ ggsave(graphname,
 
 ```
 
+### Online (Controlled Experiment) Only
+Without the age variable
+
+Musical sophistication: Zhang and Schubert 2019
+Perceive: 
+```{r}
+cor_data_Bach<-full_data%>%filter(group == "Online")%>%select(musician_status, perceive_Bach:style_Bach) # note not Pt_ID, group, #age, 
+
+#change musician_status to ranking
+cor_data_Bach$musician_status<-as.numeric(cor_data_Bach$musician_status)
+
+#select only complete
+cor_data_Bach_nona<-na.omit(cor_data_Bach) # however maybe you could retain more data if you simply got rid of the age col since this seems to be what is missing most often.
+names(cor_data_Bach_nona)<-c("Musical Sophistication", "Perceive", "Instruments","Understanding", "Augment", "Disturb", "Enhance", "Moved", "Familiar","Style") # "Age", 
+
+# check number of samples
+samples<-nrow(cor_data_Bach_nona)
+colours_DSQ<-c("#2d769a", "white","#b34036")
+title = ""
+#title = "Bach Visualization"
+subtitle = paste0("Kendall Correlations (BH adj) (n = ", samples, ")")
+chart.correlation(cor_data_Bach_nona, colours_DSQ, title, subtitle) #moved the cross-correlation code to the useful_functions script to make this more tidy.
+
+graphname<-paste0("../plots/Kendall-Correlations-Online_BachVis.png")
+ggsave(graphname, 
+       width = 10, 
+       height = 9, 
+       units = 'cm', 
+       dpi = 500)
+
+```
+
 
 ## Reliability: Omega
 ### Live
@@ -860,6 +892,7 @@ vss(fa_dat) # this suggests that the complexity 1 solution achieves max at 1 fac
 ```{r}
 visualization_factor_analysis_1<-fa(fa_dat, 1)
 visualization_factor_analysis_1
+visualization_factor_analysis_1$Vaccounted
 plot(visualization_factor_analysis_1)
 fa.diagram(visualization_factor_analysis_1)
 ```
@@ -868,6 +901,7 @@ It is interesting to see its structure because now there is a factor for underst
 ```{r}
 visualization_factor_analysis_2<-fa(fa_dat, 2)
 visualization_factor_analysis_2
+visualization_factor_analysis_2$Vaccounted
 plot(visualization_factor_analysis_2)
 fa.diagram(visualization_factor_analysis_2)
 ```
@@ -1069,8 +1103,59 @@ ggplot(long, aes(x = type, y = response)) +
   geom_boxplot(fill = "light blue") + 
   geom_jitter(alpha = .5)+
   stat_summary(fun=mean, geom="point", shape=10, size=3.5, color="black") + 
-  ggtitle("Live versus Online Complex") + 
+  ggtitle("Online Results") + 
   facet_grid(cols = vars(factor))+
   theme_bw() + theme(legend.position="none")
 ```
 
+# Did the visualisation support their understanding?
+
+I need to check if they reported values that are significantly higher than neutral opinion
+Scale was 1 to 5 and 3 was in the centre therefore I need to check if the responses on the items were significantly different than 3. 
+Bonferroni corrected p-values: multiply by 6.
+```{r}
+# check assumptions
+shapiro.test(fa_scores$Understand) #violated
+shapiro.test(fa_scores$Enhance) #violated
+ggqqplot(fa_scores$Understand, ylab = "Understand",
+         ggtheme = theme_minimal())
+ggqqplot(fa_scores$Enhance, ylab = "Understand",
+         ggtheme = theme_minimal())
+
+#Therefore you need to conduct the One-Sample Wilcoxon Signed Rank Test in R
+
+#live 
+wilcox.test(fa_scores$Understand, mu = 0, alternative = "two.sided")
+wilcox.test(fa_scores$Enhance, mu = 0, alternative = "two.sided")
+```
+
+```{r}
+#online first complex
+oneSample <-online_dat%>%filter(order == "first")%>%filter(type =="Complex")
+
+# check assumptions
+shapiro.test(oneSample$Understand) #violated
+shapiro.test(oneSample$Enhance) # meets 
+ggqqplot(oneSample$Understand, ylab = "Understand",
+         ggtheme = theme_minimal())
+ggqqplot(oneSample$Enhance, ylab = "Understand",
+         ggtheme = theme_minimal())
+
+wilcox.test(oneSample$Understand, mu = 0, alternative = "two.sided")
+t.test(oneSample$Enhance, mu = 0, alternative = "two.sided")
+```
+```{r}
+#online first simple
+oneSample <-online_dat%>%filter(order == "first")%>%filter(type =="Simple")
+
+# check assumptions
+shapiro.test(oneSample$Understand) #violated
+shapiro.test(oneSample$Enhance) # meets 
+ggqqplot(oneSample$Understand, ylab = "Understand",
+         ggtheme = theme_minimal())
+ggqqplot(oneSample$Enhance, ylab = "Understand",
+         ggtheme = theme_minimal())
+
+wilcox.test(oneSample$Understand, mu = 0, alternative = "two.sided")
+t.test(oneSample$Enhance, mu = 0, alternative = "two.sided")
+```
