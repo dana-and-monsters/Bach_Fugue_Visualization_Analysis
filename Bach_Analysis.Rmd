@@ -125,7 +125,7 @@ colnames(edited)[which(names(edited) == "Q53")] <- "gender"
 colnames(edited)[which(names(edited) == "Q54")] <- "musician_status"
 ```
 
-We also had a question that was a quiz question to truly test participants' understanding of the visualization:
+We also had a question that was a quiz question to truly test participants' Grasping of the visualization:
 
 Please select the statement that is most correct.
 X The color of the discs corresponded to the emotion in the music.
@@ -906,13 +906,24 @@ plot(visualization_factor_analysis_2)
 fa.diagram(visualization_factor_analysis_2)
 ```
 
+March 3rd, 2025: Compute metrics for assessing whether the dataset is appropriate for factor analysis as recommended by the reviewer. 
+
+Bartlett’s test of sphericity and the Kaiser-Meyer-Olkin
+
+```{r}
+library(performance)
+check_factorstructure(fa_dat)
+```
+
+
+
 #### Add 2FA factor scores to df
 ```{r}
 visualization_factor_analysis_2_scores<-psych::factor.scores(fa_dat, visualization_factor_analysis_2)
 
 visualization_factors<-cbind(data_for_fa$Pt_ID,data.frame(visualization_factor_analysis_2_scores$scores))
 
-colnames(visualization_factors)<- c("Pt_ID","Understand","Enhance")
+colnames(visualization_factors)<- c("Pt_ID","Grasp","Appreciate")
 
 cbind(visualization_factors$Pt_ID, full_data$Pt_ID)
 
@@ -921,7 +932,7 @@ full_data<-cbind(full_data,visualization_factors[2:3])
 
 ## Factor Score Spearman Rank Correlations 
 ```{r}
-fa_scores<-full_data%>%filter(group == "Live")%>%select(Pt_ID,Understand, Enhance)
+fa_scores<-full_data%>%filter(group == "Live")%>%select(Pt_ID,Grasp, Appreciate)
 
 personal_char_list<-df.full%>%select(Pt_ID, age, EC,AIMS, musician_status, fan, familiar_Bach, style_Bach)
 
@@ -929,7 +940,7 @@ fa_scores_and_pers_chars<-full_join(fa_scores, personal_char_list, by = "Pt_ID")
 
 fa_scores_and_pers_chars_nona<-fa_scores_and_pers_chars%>%select(-age, -Pt_ID)%>%na.omit()
 
-names(fa_scores_and_pers_chars_nona)<-c("Understand \n Factor", "Enhance \n Factor", "Empathy", "AIMS", "Musician Status", "Fanship", "Familiar Piece", "Familiar Style")
+names(fa_scores_and_pers_chars_nona)<-c("Grasp \n Factor", "Appreciate \n Factor", "Empathy", "AIMS", "Musician Status", "Fanship", "Familiar Piece", "Familiar Style")
 # check number of samples
 samples<-nrow(fa_scores_and_pers_chars_nona)
 colours_DSQ<-c("#2d769a", "white","#b34036")
@@ -949,40 +960,39 @@ ggsave(graphname,
 ## Assess Group differences: Live versus Online
 Compare between live and online complex ratings
 IV: group - Live, Online Complex
-DV: Understand, Enhance
+DV: Grasp, Appreciate
 
 guide: http://www.sthda.com/english/wiki/unpaired-two-samples-wilcoxon-test-in-r
 
 ```{r}
-complex_data<-full_data%>%filter(type == "Complex" & order != "second")%>%drop_na(c(Understand, Enhance))
+complex_data<-full_data%>%filter(type == "Complex" & order != "second")%>%drop_na(c(Grasp, Appreciate))
 
 #check assumptions
-complex_data%>%group_by(group)%>%summarise(W = shapiro.test(Understand)$statistic,
-                                          p = shapiro.test(Understand)$p.value)
+complex_data%>%group_by(group)%>%summarise(W = shapiro.test(Grasp)$statistic,
+                                          p = shapiro.test(Grasp)$p.value)
 
-complex_data%>%group_by(group)%>%summarise(W = shapiro.test(Enhance)$statistic,
-                                          p = shapiro.test(Enhance)$p.value)
+complex_data%>%group_by(group)%>%summarise(W = shapiro.test(Appreciate)$statistic,p = shapiro.test(Appreciate)$p.value)
 
 # summarize data
 complex_data%>%group_by(group)%>%summarise(n = n())
-## understand
-complex_data%>%group_by(group)%>%summarise(mean = mean(Understand), SD = sd(Understand))
-## enhance
-complex_data%>%group_by(group)%>%summarise(mean = mean(Enhance), SD = sd(Enhance))
+## Grasp
+complex_data%>%group_by(group)%>%summarise(mean = mean(Grasp), SD = sd(Grasp))
+## Appreciate
+complex_data%>%group_by(group)%>%summarise(mean = mean(Appreciate), SD = sd(Appreciate))
 
-# What are the effects of live versus online on understanding ratings?
-wilcox.test(Understand ~ group, data = complex_data,
+# What are the effects of live versus online on grasping ratings?
+wilcox.test(Grasp ~ group, data = complex_data,
                    exact = FALSE)
 
-# What are the effects of live versus online on enhancement ratings?
-wilcox.test(Enhance ~ group, data = complex_data,
+# What are the effects of live versus online on Appreciate ratings?
+wilcox.test(Appreciate ~ group, data = complex_data,
                    exact = FALSE)
 
 ```
 
 Visualize
 ```{r}
-plot_data<-complex_data%>%select(Pt_ID,group, Understand, Enhance)
+plot_data<-complex_data%>%select(Pt_ID,group, Grasp, Appreciate)
 
 long<-plot_data%>%pivot_longer(!c(Pt_ID, group), names_to = "factor", values_to = "response")
 
@@ -998,37 +1008,37 @@ ggplot(long, aes(x = group, y = response)) +
 ## Complexity differences: Online only
 Compare between online simple and online complex ratings
 IV: type - complex first, Simple first
-DV: Understand, Enhance
+DV: Grasp, Appreciate
 
 Use only the first video they watched
 
 ```{r}
-first_data<-full_data%>%filter(group == "Online" & order== "first")%>%drop_na(c(Understand, Enhance))
+first_data<-full_data%>%filter(group == "Online" & order== "first")%>%drop_na(c(Grasp, Appreciate))
 
 #check assumptions
-first_data%>%group_by(type)%>%summarise(W = shapiro.test(Understand)$statistic,
-                                          p = shapiro.test(Understand)$p.value)
+first_data%>%group_by(type)%>%summarise(W = shapiro.test(Grasp)$statistic,
+                                          p = shapiro.test(Grasp)$p.value)
 
 # summarize data
 first_data%>%group_by(type)%>%summarise(n = n())
-## understand
-first_data%>%group_by(type)%>%summarise(mean = mean(Understand), SD = sd(Understand))
-## enhance
-first_data%>%group_by(group)%>%summarise(mean = mean(Enhance), SD = sd(Enhance))
+## Grasp
+first_data%>%group_by(type)%>%summarise(mean = mean(Grasp), SD = sd(Grasp))
+## Appreciate
+first_data%>%group_by(group)%>%summarise(mean = mean(Appreciate), SD = sd(Appreciate))
 
-# What are the effects of complex versus simple on understanding ratings?
-wilcox.test(Understand ~ type, data = first_data,
+# What are the effects of complex versus simple on Grasping ratings?
+wilcox.test(Grasp ~ type, data = first_data,
                    exact = FALSE)
 
-# What are the effects of live versus online on enhancement ratings?
-wilcox.test(Enhance ~ type, data = first_data,
+# What are the effects of live versus online on appreciate ratings?
+wilcox.test(Appreciate ~ type, data = first_data,
                    exact = FALSE)
 
 ```
 ## Compare the groups: SS, SC, CS, CC
 Add subgroup class: SS, SC, CS, CC
 
-DV:understand and enhance
+DV:Grasp and Appreciate
 IV: type -  complex, simple; subgroup
 random intercept: Pt_ID
 ```{r}
@@ -1044,28 +1054,28 @@ online_dat<-online_dat%>%drop_na(Subgroup)
 Normality is violated in every group
 ```{r}
 #check assumptions
-online_dat%>%group_by(Subgroup)%>%summarise(W = shapiro.test(Understand)$statistic,
-                                          p = shapiro.test(Understand)$p.value)
+online_dat%>%group_by(Subgroup)%>%summarise(W = shapiro.test(Grasp)$statistic,
+                                          p = shapiro.test(Grasp)$p.value)
 ```
 
 With high sample sizes, the shapiro test is easily violated. Check normality with qqplots.There are minor deviations from normality. Linear mixed effects modeling may be robust against minor deviations to normality, therefore you could still examine if differences could be attributed to subgroup.
 ```{r}
-ggqqplot(online_dat, "Understand", ggtheme = theme_bw(), facet.by = "Subgroup")
+ggqqplot(online_dat, "Grasp", ggtheme = theme_bw(), facet.by = "Subgroup")
 ```
 
 
 ### LME
 
 Try with lme4 anyways
-#### Understand
+#### Grasp
 ```{r}
-baseline<-lmer(Understand ~ 1 + (1|Pt_ID), data = online_dat, REML = FALSE)
+baseline<-lmer(Grasp ~ 1 + (1|Pt_ID), data = online_dat, REML = FALSE)
 plot(baseline)
 
-type<-lmer(Understand ~ 1 + type + (1|Pt_ID), data = online_dat, REML = FALSE)
+type<-lmer(Grasp ~ 1 + type + (1|Pt_ID), data = online_dat, REML = FALSE)
 plot(type)
 
-subgroup<-lmer(Understand ~ 1 + Subgroup + (1|Pt_ID), data = online_dat, REML = FALSE)
+subgroup<-lmer(Grasp ~ 1 + Subgroup + (1|Pt_ID), data = online_dat, REML = FALSE)
 plot(subgroup)
 
 anova(baseline, type) # ns
@@ -1078,15 +1088,15 @@ qqmath(type, id=0.05)
 qqmath(subgroup, id=0.05)
 ```
 
-#### Enhance
+#### Appreciate
 ```{r}
-baseline<-lmer(Enhance ~ 1 + (1|Pt_ID), data = online_dat, REML = FALSE)
+baseline<-lmer(Appreciate ~ 1 + (1|Pt_ID), data = online_dat, REML = FALSE)
 plot(baseline)
 
-type<-lmer(Enhance ~ 1 + type + (1|Pt_ID), data = online_dat, REML = FALSE)
+type<-lmer(Appreciate ~ 1 + type + (1|Pt_ID), data = online_dat, REML = FALSE)
 plot(type)
 
-subgroup<-lmer(Enhance ~ 1 + Subgroup + (1|Pt_ID), data = online_dat, REML = FALSE)
+subgroup<-lmer(Appreciate ~ 1 + Subgroup + (1|Pt_ID), data = online_dat, REML = FALSE)
 plot(subgroup)
 
 anova(baseline, type) # ns
@@ -1095,7 +1105,7 @@ anova(baseline, subgroup) # ns
 
 Visualize
 ```{r}
-plot_data<-online_dat%>%select(Pt_ID,type, Understand, Enhance)
+plot_data<-online_dat%>%select(Pt_ID,type, Grasp, Appreciate)
 
 long<-plot_data%>%pivot_longer(!c(Pt_ID, type), names_to = "factor", values_to = "response")
 
@@ -1108,25 +1118,25 @@ ggplot(long, aes(x = type, y = response)) +
   theme_bw() + theme(legend.position="none")
 ```
 
-# Did the visualisation support their understanding?
+# Did the visualisation support their Grasping?
 
 I need to check if they reported values that are significantly higher than neutral opinion
 Scale was 1 to 5 and 3 was in the centre therefore I need to check if the responses on the items were significantly different than 3. 
 Bonferroni corrected p-values: multiply by 6.
 ```{r}
 # check assumptions
-shapiro.test(fa_scores$Understand) #violated
-shapiro.test(fa_scores$Enhance) #violated
-ggqqplot(fa_scores$Understand, ylab = "Understand",
+shapiro.test(fa_scores$Grasp) #violated
+shapiro.test(fa_scores$Appreciate) #violated
+ggqqplot(fa_scores$Grasp, ylab = "Grasp",
          ggtheme = theme_minimal())
-ggqqplot(fa_scores$Enhance, ylab = "Understand",
+ggqqplot(fa_scores$Appreciate, ylab = "Grasp",
          ggtheme = theme_minimal())
 
 #Therefore you need to conduct the One-Sample Wilcoxon Signed Rank Test in R
 
 #live 
-wilcox.test(fa_scores$Understand, mu = 0, alternative = "two.sided")
-wilcox.test(fa_scores$Enhance, mu = 0, alternative = "two.sided")
+wilcox.test(fa_scores$Grasp, mu = 0, alternative = "two.sided")
+wilcox.test(fa_scores$Appreciate, mu = 0, alternative = "two.sided")
 ```
 
 ```{r}
@@ -1134,28 +1144,28 @@ wilcox.test(fa_scores$Enhance, mu = 0, alternative = "two.sided")
 oneSample <-online_dat%>%filter(order == "first")%>%filter(type =="Complex")
 
 # check assumptions
-shapiro.test(oneSample$Understand) #violated
-shapiro.test(oneSample$Enhance) # meets 
-ggqqplot(oneSample$Understand, ylab = "Understand",
+shapiro.test(oneSample$Grasp) #violated
+shapiro.test(oneSample$Appreciate) # meets 
+ggqqplot(oneSample$Grasp, ylab = "Grasp",
          ggtheme = theme_minimal())
-ggqqplot(oneSample$Enhance, ylab = "Understand",
+ggqqplot(oneSample$Appreciate, ylab = "Grasp",
          ggtheme = theme_minimal())
 
-wilcox.test(oneSample$Understand, mu = 0, alternative = "two.sided")
-t.test(oneSample$Enhance, mu = 0, alternative = "two.sided")
+wilcox.test(oneSample$Grasp, mu = 0, alternative = "two.sided")
+t.test(oneSample$Appreciate, mu = 0, alternative = "two.sided")
 ```
 ```{r}
 #online first simple
 oneSample <-online_dat%>%filter(order == "first")%>%filter(type =="Simple")
 
 # check assumptions
-shapiro.test(oneSample$Understand) #violated
-shapiro.test(oneSample$Enhance) # meets 
-ggqqplot(oneSample$Understand, ylab = "Understand",
+shapiro.test(oneSample$Grasp) #violated
+shapiro.test(oneSample$Appreciate) # meets 
+ggqqplot(oneSample$Grasp, ylab = "Grasp",
          ggtheme = theme_minimal())
-ggqqplot(oneSample$Enhance, ylab = "Understand",
+ggqqplot(oneSample$Appreciate, ylab = "Grasp",
          ggtheme = theme_minimal())
 
-wilcox.test(oneSample$Understand, mu = 0, alternative = "two.sided")
-t.test(oneSample$Enhance, mu = 0, alternative = "two.sided")
+wilcox.test(oneSample$Grasp, mu = 0, alternative = "two.sided")
+t.test(oneSample$Appreciate, mu = 0, alternative = "two.sided")
 ```
